@@ -1,0 +1,52 @@
+import sqlite3
+import os
+import shutil
+import win32crypt  # Used for decrypting cookies on Windows
+
+def get_chrome_cookies():
+    """Extract cookies from Chrome's database."""
+    # Path to Chrome's Cookies database
+    chrome_cookie_path = os.path.expanduser(r'~\AppData\Local\Google\Chrome\User Data\Default\Cookies')
+    # Temporary path for copying the Cookies database
+    temp_cookie_path = os.path.join(os.environ['TEMP'], 'Cookies')
+    
+    # Copy the Cookies database to a temporary location
+    shutil.copy2(chrome_cookie_path, temp_cookie_path)
+    
+    # Connect to the copied database
+    conn = sqlite3.connect(temp_cookie_path)
+    cursor = conn.cursor()
+    
+    # Query to fetch cookies
+    cursor.execute('SELECT name, value, encrypted_value FROM cookies')
+    cookies = cursor.fetchall()
+    
+    # Close connection and remove the temporary file
+    conn.close()
+    os.remove(temp_cookie_path)
+    
+    return cookies
+
+def decrypt_value(encrypted_value):
+    """Decrypt the encrypted value (Windows-specific)."""
+    try:
+        return win32crypt.CryptUnprotectData(encrypted_value, None, None, None, 0)[1].decode('utf-8')
+    except Exception as e:
+        return f"Error decrypting value: {e}"
+
+def save_cookies_to_file(cookies, folder_name='Data', filename='cookies.txt'):
+    """Create a folder and save cookies to a text file inside that folder."""
+    if not os.path.exists(folder_name):
+        os.makedirs(folder_name)
+    
+    file_path = os.path.join(folder_name, filename)
+    with open(file_path, 'w') as f:
+        for name, value, encrypted_value in cookies:
+            if encrypted_value:
+                value = decrypt_value(encrypted_value)
+            f.write(f'Name: {name}\nValue: {value}\n\n')
+
+if __name__ == "__main__":
+    cookies = get_chrome_cookies()
+    save_cookies_to_file(cookies)
+    print(f'Cookies have been saved to the Data folder.')
