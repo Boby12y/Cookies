@@ -1,12 +1,31 @@
-import sqlite3
 import os
 import shutil
+import sqlite3
 import win32crypt  # Used for decrypting cookies on Windows
+
+def get_current_user():
+    """Retrieve the current logged-in user's name."""
+    try:
+        user = os.getlogin()
+        return user
+    except OSError as e:
+        print(f"Error retrieving user: {e}")
+        return None
 
 def get_chrome_cookies():
     """Extract cookies from Chrome's database."""
+    user = get_current_user()
+    if not user:
+        print("Could not retrieve the current user.")
+        return []
+
     # Path to Chrome's Cookies database
-    chrome_cookie_path = os.path.expanduser(r'~\AppData\Local\Google\Chrome\User Data\Default\Cookies')
+    chrome_cookie_path = os.path.expanduser(fr'C:\Users\{user}\AppData\Local\Google\Chrome\User Data\Default\Cookies')
+    
+    if not os.path.exists(chrome_cookie_path):
+        print(f"Cookies database not found at {chrome_cookie_path}")
+        return []
+
     # Temporary path for copying the Cookies database
     temp_cookie_path = os.path.join(os.environ['TEMP'], 'Cookies')
     
@@ -48,5 +67,8 @@ def save_cookies_to_file(cookies, folder_name='Data', filename='cookies.txt'):
 
 if __name__ == "__main__":
     cookies = get_chrome_cookies()
-    save_cookies_to_file(cookies)
-    print(f'Cookies have been saved to the Data folder.')
+    if cookies:
+        save_cookies_to_file(cookies)
+        print(f'Cookies have been saved to the Data folder.')
+    else:
+        print("No cookies were retrieved.")
